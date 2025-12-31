@@ -7,6 +7,7 @@ import { AuthProvider } from "@/hooks/useAuth";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Registrations from "./pages/Registrations";
+import PublicForm from "./pages/PublicForm";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -22,6 +23,7 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<Auth />} />
             <Route path="/registrations" element={<Registrations />} />
+            <Route path="/form" element={<PublicForm />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
