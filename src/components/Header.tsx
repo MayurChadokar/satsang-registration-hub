@@ -1,9 +1,11 @@
-import { LogOut, User } from 'lucide-react';
+import { LogOut, User, Users, Plus } from 'lucide-react';
+import { useLocation, Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
 
 export function Header() {
   const { user, signOut, isAdmin } = useAuth();
+  const location = useLocation();
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border/50 bg-card/80 backdrop-blur-lg">
@@ -19,6 +21,29 @@ export function Header() {
             <p className="text-xs text-muted-foreground">Bujurag Sangat Registration</p>
           </div>
         </div>
+
+        {user && isAdmin && (
+          <nav className="hidden md:flex items-center gap-1">
+            <Link to="/">
+              <Button
+                variant={location.pathname === '/' ? 'secondary' : 'ghost'}
+                size="sm"
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                New Registration
+              </Button>
+            </Link>
+            <Link to="/registrations">
+              <Button
+                variant={location.pathname === '/registrations' ? 'secondary' : 'ghost'}
+                size="sm"
+              >
+                <Users className="h-4 w-4 mr-1" />
+                View All
+              </Button>
+            </Link>
+          </nav>
+        )}
 
         {user && (
           <div className="flex items-center gap-3">
