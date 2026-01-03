@@ -8,7 +8,7 @@ export default function PublicForm() {
         <div className="container mx-auto flex h-16 items-center justify-center px-4">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-full gradient-primary shadow-soft">
-              <span className="text-lg font-bold text-primary-foreground">ॐ</span>
+              <span className="text-lg font-bold text-primary-foreground">RSSB</span>
             </div>
             <div className="flex flex-col">
               <h1 className="text-lg font-serif font-bold text-foreground leading-tight">

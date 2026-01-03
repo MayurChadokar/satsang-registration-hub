@@ -1,8 +1,8 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Camera, Upload, CheckCircle, Loader2 } from 'lucide-react';
+import { Camera, Upload, CheckCircle, Loader2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -56,7 +56,78 @@ export function RegistrationForm() {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const [showCamera, setShowCamera] = useState(false);
+
+  // Check if the device is mobile
+  useEffect(() => {
+    const userAgent = navigator.userAgent.toLowerCase();
+    setIsMobile(/android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(userAgent));
+  }, []);
+
+  // Clean up camera stream on unmount
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, []);
+
+  const startCamera = async () => {
+    setCameraError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment' },
+        audio: false,
+      });
+      
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        streamRef.current = stream;
+        setShowCamera(true);
+      }
+    } catch (err) {
+      console.error('Error accessing camera:', err);
+      setCameraError('Could not access camera. Please check permissions.');
+      setShowCamera(false);
+    }
+  };
+
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    setShowCamera(false);
+  };
+
+  const captureImage = () => {
+    if (!videoRef.current) return;
+    
+    const canvas = document.createElement('canvas');
+    canvas.width = videoRef.current.videoWidth;
+    canvas.height = videoRef.current.videoHeight;
+    const ctx = canvas.getContext('2d');
+    
+    if (ctx) {
+      ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+      
+      // Convert canvas to blob and create a file
+      canvas.toBlob((blob) => {
+        if (blob) {
+          const file = new File([blob], `capture-${Date.now()}.jpg`, { type: 'image/jpeg' });
+          setImageFile(file);
+          setImagePreview(URL.createObjectURL(blob));
+          stopCamera();
+        }
+      }, 'image/jpeg', 0.9);
+    }
+  };
   const { toast } = useToast();
 
   const {
@@ -77,11 +148,11 @@ export function RegistrationForm() {
     const file = e.target.files?.[0];
     if (file) {
       setImageFile(file);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImagePreview(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+      setImagePreview(URL.createObjectURL(file));
+    }
+    // Reset the input value to allow selecting the same file again
+    if (e.target) {
+      e.target.value = '';
     }
   };
 
@@ -168,40 +239,118 @@ export function RegistrationForm() {
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
       {/* Image Upload */}
       <div className="flex flex-col items-center space-y-4">
-        <div
-          onClick={() => fileInputRef.current?.click()}
-          className="relative flex h-32 w-32 cursor-pointer items-center justify-center overflow-hidden rounded-full border-4 border-dashed border-primary/30 bg-secondary transition-all duration-300 hover:border-primary hover:bg-secondary/80"
-        >
-          {imagePreview ? (
-            <img
-              src={imagePreview}
-              alt="Preview"
-              className="h-full w-full object-cover"
-            />
-          ) : (
-            <div className="flex flex-col items-center text-muted-foreground">
-              <Camera className="h-8 w-8 mb-1" />
-              <span className="text-xs">Add Photo</span>
-            </div>
+        <div className="relative">
+          <div
+            onClick={() => fileInputRef.current?.click()}
+            className="relative flex h-32 w-32 cursor-pointer items-center justify-center overflow-hidden rounded-full border-4 border-dashed border-primary/30 bg-secondary transition-all duration-300 hover:border-primary hover:bg-secondary/80"
+          >
+            {imagePreview ? (
+              <img
+                src={imagePreview}
+                alt="Preview"
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              <div className="flex flex-col items-center text-muted-foreground">
+                <Camera className="h-8 w-8 mb-1" />
+                <span className="text-xs">Add Photo</span>
+              </div>
+            )}
+          </div>
+          {imagePreview && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setImageFile(null);
+                setImagePreview(null);
+              }}
+              className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors"
+            >
+              <X className="h-4 w-4" />
+            </button>
           )}
         </div>
+        
         <input
           ref={fileInputRef}
           type="file"
           accept="image/*"
-          capture="environment"
+          capture={isMobile ? 'environment' : undefined}
           onChange={handleImageChange}
           className="hidden"
         />
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => fileInputRef.current?.click()}
-        >
-          <Upload className="h-4 w-4 mr-2" />
-          Upload Photo
-        </Button>
+
+        <div className="flex flex-col sm:flex-row gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => fileInputRef.current?.click()}
+            className="flex-1"
+          >
+            <Upload className="h-4 w-4 mr-2" />
+            {isMobile ? 'Choose from Gallery' : 'Choose Photo'}
+          </Button>
+          
+          {isMobile && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => startCamera()}
+              className="flex-1"
+            >
+              <Camera className="h-4 w-4 mr-2" />
+              Take Photo
+            </Button>
+          )}
+        </div>
+
+        {cameraError && (
+          <p className="text-sm text-destructive text-center">{cameraError}</p>
+        )}
+
+        {/* Camera Preview Modal */}
+        {showCamera && (
+          <div className="fixed inset-0 bg-black/90 z-50 flex flex-col items-center justify-center p-4">
+            <div className="w-full max-w-md">
+              <div className="relative aspect-[4/3] bg-black rounded-lg overflow-hidden">
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              
+              <div className="flex justify-center gap-4 mt-4">
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="lg"
+                  onClick={stopCamera}
+                  className="rounded-full h-16 w-16 flex items-center justify-center"
+                >
+                  <X className="h-6 w-6" />
+                </Button>
+                
+                <Button
+                  type="button"
+                  variant="default"
+                  size="lg"
+                  onClick={captureImage}
+                  className="rounded-full h-16 w-16 bg-white hover:bg-white/90"
+                >
+                  <div className="h-12 w-12 rounded-full bg-red-500 border-4 border-white"></div>
+                </Button>
+                
+                <div className="w-16"></div> {/* Spacer for alignment */}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="grid gap-6 sm:grid-cols-2">

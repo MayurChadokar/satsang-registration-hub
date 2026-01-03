@@ -91,7 +91,7 @@ export default function Auth() {
         {/* Logo & Title */}
         <div className="flex flex-col items-center text-center">
           <div className="flex h-16 w-16 items-center justify-center rounded-full gradient-primary shadow-glow mb-4">
-            <span className="text-3xl font-bold text-primary-foreground">ॐ</span>
+            <span className="text-3xl font-bold text-primary-foreground">RSSB</span>
           </div>
           <h1 className="text-2xl font-serif font-bold text-foreground">
             Radhasoami Satsang Beas
