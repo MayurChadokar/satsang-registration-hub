@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -75,11 +75,13 @@ interface Registration {
 }
 
 interface EditRegistrationDialogProps {
-  registration: Registration;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  registration: Registration | null;
+  onSuccess?: () => void;
 }
 
-export function EditRegistrationDialog({ registration }: EditRegistrationDialogProps) {
-  const [open, setOpen] = useState(false);
+export function EditRegistrationDialog({ open, onOpenChange, registration, onSuccess }: EditRegistrationDialogProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -89,23 +91,30 @@ export function EditRegistrationDialog({ registration }: EditRegistrationDialogP
     handleSubmit,
     setValue,
     watch,
+    reset,
     formState: { errors },
   } = useForm<EditFormData>({
     resolver: zodResolver(editSchema),
-    defaultValues: {
-      name: registration.name,
-      surname: registration.surname,
-      mobile_number: registration.mobile_number,
-      alternate_mobile_number: registration.alternate_mobile_number || '',
-      emergency_contact_number: registration.emergency_contact_number,
-      aadhaar_number: registration.aadhaar_number,
-      address: registration.address || '',
-      age: registration.age?.toString() || '',
-      bp: registration.bp || '',
-      hypertension: (registration.hypertension as 'Yes' | 'No' | '') || '',
-      sugar: (registration.sugar as 'Yes' | 'No' | '') || '',
-    },
   });
+
+  // Reset form when registration changes
+  useEffect(() => {
+    if (registration) {
+      reset({
+        name: registration.name,
+        surname: registration.surname,
+        mobile_number: registration.mobile_number,
+        alternate_mobile_number: registration.alternate_mobile_number || '',
+        emergency_contact_number: registration.emergency_contact_number,
+        aadhaar_number: registration.aadhaar_number,
+        address: registration.address || '',
+        age: registration.age?.toString() || '',
+        bp: registration.bp || '',
+        hypertension: (registration.hypertension as 'Yes' | 'No' | '') || '',
+        sugar: (registration.sugar as 'Yes' | 'No' | '') || '',
+      });
+    }
+  }, [registration, reset]);
 
   const hypertension = watch('hypertension');
   const sugar = watch('sugar');
@@ -139,7 +148,8 @@ export function EditRegistrationDialog({ registration }: EditRegistrationDialogP
       });
 
       queryClient.invalidateQueries({ queryKey: ['registrations'] });
-      setOpen(false);
+      onOpenChange(false);
+      onSuccess?.();
     } catch (error: any) {
       toast({
         title: 'Update Failed',
@@ -151,13 +161,10 @@ export function EditRegistrationDialog({ registration }: EditRegistrationDialogP
     }
   };
 
+  if (!registration) return null;
+
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-8 w-8">
-          <Pencil className="h-4 w-4" />
-        </Button>
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-serif">Edit Registration</DialogTitle>
@@ -296,7 +303,7 @@ export function EditRegistrationDialog({ registration }: EditRegistrationDialogP
             <Button
               type="button"
               variant="outline"
-              onClick={() => setOpen(false)}
+              onClick={() => onOpenChange(false)}
               disabled={isSubmitting}
             >
               Cancel
