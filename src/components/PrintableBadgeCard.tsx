@@ -66,7 +66,7 @@ export function PrintableBadgeCard({ reg }: { reg: Registration }) {
           </div>
           <div className="badge-row">
             <div className="badge-label">मोबाइल नंबर</div>
-            <div className="badge-value">{toHindiNumber(reg.mobile_number || "-")}</div>
+            <div className="badge-value">{ emergencyNumbers }</div>
           </div>
           <div className="badge-row">
             <div className="badge-label">उम्र</div>

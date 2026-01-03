@@ -14,6 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Card, CardContent } from '@/components/ui/card';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
@@ -44,7 +45,7 @@ const registrationSchema = z.object({
     .regex(/^\d+$/, 'Aadhaar must contain only digits'),
   address: z.string().optional(),
   age: z.string().optional(),
-  bp: z.string().optional(),
+  gender: z.enum(['Male', 'Female']).optional(),
   hypertension: z.enum(['Yes', 'No']).optional(),
   sugar: z.enum(['Yes', 'No']).optional(),
 });
@@ -58,6 +59,7 @@ export function RegistrationForm() {
   const [submitted, setSubmitted] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [storageStatus, setStorageStatus] = useState<string>('Not tested');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -147,8 +149,32 @@ export function RegistrationForm() {
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      console.log('File selected:', file.name, 'Type:', file.type, 'Size:', file.size);
+      
+      // Validate file type - accept all common image formats
+      const validImageTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'image/bmp'];
+      if (!validImageTypes.includes(file.type)) {
+        toast({
+          title: 'Invalid File',
+          description: `File type "${file.type}" is not supported. Please select JPG, PNG, GIF, or WebP.`,
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      // Validate file size (max 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        toast({
+          title: 'File Too Large',
+          description: 'Image size must be less than 5MB.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
       setImageFile(file);
       setImagePreview(URL.createObjectURL(file));
+      console.log('Image file accepted and preview created');
     }
     // Reset the input value to allow selecting the same file again
     if (e.target) {
@@ -156,51 +182,153 @@ export function RegistrationForm() {
     }
   };
 
+  // Test storage connection
+  const testStorageConnection = async () => {
+    setStorageStatus('Testing...');
+    try {
+      console.log('=== Testing Storage Connection ===');
+      console.log('Supabase URL:', import.meta.env.VITE_SUPABASE_URL);
+      console.log('Supabase Key:', import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY?.substring(0, 10) + '...');
+      
+      // Test basic Supabase connection first
+      console.log('Testing basic Supabase connection...');
+      const { data: connectionTest, error: connectionError } = await supabase
+        .from('sangat_registrations')
+        .select('count')
+        .limit(1);
+      
+      if (connectionError) {
+        console.error('❌ Basic Supabase connection failed:', connectionError);
+        setStorageStatus(`❌ Supabase connection failed: ${connectionError.message}`);
+        return;
+      }
+      
+      console.log('✅ Basic Supabase connection working');
+      
+      const { data: buckets, error: bucketError } = await supabase.storage.listBuckets();
+      
+      if (bucketError) {
+        console.error('❌ Bucket test failed:', bucketError);
+        console.error('Full error details:', bucketError);
+        setStorageStatus(`❌ Storage error: ${bucketError.message}`);
+        return;
+      }
+      
+      console.log('✅ Buckets found:', buckets?.map(b => b.name));
+      console.log('Total buckets:', buckets?.length);
+      console.log('Raw buckets data:', buckets);
+      
+      if (!buckets || buckets.length === 0) {
+        setStorageStatus('❌ No buckets found - check Supabase project and permissions');
+        return;
+      }
+      
+      const bucketExists = buckets?.some(bucket => bucket.name === 'sangat-images');
+      
+      if (!bucketExists) {
+        console.error('❌ Bucket "sangat-images" not found');
+        console.log('Available buckets:', buckets?.map(b => b.name));
+        setStorageStatus(`❌ Bucket "sangat-images" not found. Available: ${buckets?.map(b => b.name).join(', ')}`);
+      } else {
+        console.log('✅ Bucket "sangat-images" exists');
+        setStorageStatus('✅ Storage connected and bucket exists');
+        
+        // Test upload permissions
+        console.log('=== Testing Upload Permissions ===');
+        try {
+          const testFileName = `test-${Date.now()}.txt`;
+          const testFile = new Blob(['test'], { type: 'text/plain' });
+          
+          const { error: uploadError } = await supabase.storage
+            .from('sangat-images')
+            .upload(testFileName, testFile);
+            
+          if (uploadError) {
+            console.error('❌ Upload test failed:', uploadError);
+            setStorageStatus(`✅ Bucket exists but upload failed: ${uploadError.message}`);
+          } else {
+            console.log('✅ Upload permissions working');
+            setStorageStatus('✅ Storage fully ready for image uploads!');
+            
+            // Clean up test file
+            await supabase.storage.from('sangat-images').remove([testFileName]);
+          }
+        } catch (uploadTestError: any) {
+          console.error('❌ Upload test error:', uploadTestError);
+          setStorageStatus(`✅ Bucket exists but upload test failed: ${uploadTestError.message}`);
+        }
+      }
+    } catch (error: any) {
+      console.error('❌ Storage test failed:', error);
+      setStorageStatus(`❌ Connection failed: ${error.message}`);
+    }
+  };
+
   const onSubmit = async (data: RegistrationFormData) => {
     setIsSubmitting(true);
 
     try {
-      let imageUrl = null;
+      let imageUrl: string | null = null;
 
+      // ================= IMAGE UPLOAD =================
       if (imageFile) {
+        // Size check (5MB)
+        if (imageFile.size > 5 * 1024 * 1024) {
+          throw new Error('Image must be less than 5MB');
+        }
+
         const fileExt = imageFile.name.split('.').pop();
-        const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
+        const fileName = `photo-${Date.now()}.${fileExt}`;
 
-        const { error: uploadError, data: uploadData } = await supabase.storage
+        const { error: uploadError } = await supabase.storage
           .from('sangat-images')
-          .upload(fileName, imageFile);
+          .upload(fileName, imageFile, {
+            upsert: true,
+          });
 
-        if (uploadError) throw uploadError;
+        if (uploadError) {
+          console.error('Upload error:', uploadError);
+          throw new Error(uploadError.message);
+        }
 
-        const { data: urlData } = supabase.storage
+        const { data } = supabase.storage
           .from('sangat-images')
           .getPublicUrl(fileName);
 
-        imageUrl = urlData.publicUrl;
+        imageUrl = data.publicUrl;
       }
 
-      const { error } = await supabase.from('sangat_registrations').insert({
-        name: data.name,
-        surname: data.surname,
-        mobile_number: data.mobile_number,
-        alternate_mobile_number: data.alternate_mobile_number || null,
-        emergency_contact_number: data.emergency_contact_number,
-        aadhaar_number: data.aadhaar_number,
-        address: data.address || null,
-        age: data.age ? parseInt(data.age) : null,
-        bp: data.bp || null,
-        hypertension: data.hypertension || null,
-        sugar: data.sugar || null,
-        image_url: imageUrl,
-      });
+      // ================= DATABASE INSERT =================
+      const { error: insertError } = await supabase
+        .from('sangat_registrations')
+        .insert({
+          name: data.name,
+          surname: data.surname,
+          mobile_number: data.mobile_number,
+          alternate_mobile_number: data.alternate_mobile_number || null,
+          emergency_contact_number: data.emergency_contact_number,
+          aadhaar_number: data.aadhaar_number,
+          address: data.address || null,
+          age: data.age ? parseInt(data.age) : null,
+          gender: data.gender || null,
+          hypertension: data.hypertension || null,
+          sugar: data.sugar || null,
+          image_url: imageUrl,
+        });
 
-      if (error) throw error;
+      if (insertError) {
+        throw new Error(insertError.message);
+      }
+
+      // ================= SUCCESS =================
+      toast({
+        title: 'Registration Successful',
+        description: imageUrl
+          ? 'Member registered with photo'
+          : 'Member registered (photo optional)',
+      });
 
       setSubmitted(true);
-      toast({
-        title: 'Registration Successful!',
-        description: 'Sangat member has been registered successfully.',
-      });
 
       setTimeout(() => {
         reset();
@@ -208,10 +336,12 @@ export function RegistrationForm() {
         setImagePreview(null);
         setSubmitted(false);
       }, 3000);
+
     } catch (error: any) {
+      console.error(error);
       toast({
         title: 'Registration Failed',
-        description: error.message || 'Something went wrong. Please try again.',
+        description: error.message || 'Something went wrong',
         variant: 'destructive',
       });
     } finally {
@@ -221,17 +351,19 @@ export function RegistrationForm() {
 
   if (submitted) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 animate-scale-in">
-        <div className="flex h-20 w-20 items-center justify-center rounded-full bg-green-100 mb-6">
-          <CheckCircle className="h-10 w-10 text-green-600" />
-        </div>
-        <h2 className="text-2xl font-serif font-bold text-foreground mb-2">
-          Registration Complete!
-        </h2>
-        <p className="text-muted-foreground text-center">
-          The sangat member has been successfully registered.
-        </p>
-      </div>
+      <Card className="w-full max-w-2xl mx-auto">
+        <CardContent className="p-8 text-center">
+          <div className="flex justify-center mb-4">
+            <CheckCircle className="h-10 w-10 text-green-600" />
+          </div>
+          <h2 className="text-2xl font-serif font-bold text-foreground mb-2">
+            Registration Complete!
+          </h2>
+          <p className="text-muted-foreground text-center">
+            The sangat member has been successfully registered.
+          </p>
+        </CardContent>
+      </Card>
     );
   }
 
@@ -310,6 +442,32 @@ export function RegistrationForm() {
         {cameraError && (
           <p className="text-sm text-destructive text-center">{cameraError}</p>
         )}
+
+        {/* Storage Status Test
+        <div className="flex flex-col items-center space-y-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={testStorageConnection}
+            className="text-xs"
+          >
+            Test Storage Connection
+          </Button>
+          <p className="text-xs text-muted-foreground text-center max-w-xs">
+            Status: {storageStatus}
+          </p>
+          {storageStatus.includes('not found') && (
+            <div className="text-xs text-muted-foreground text-center max-w-xs">
+              <p className="font-semibold">📋 To fix:</p>
+              <p>1. Go to Supabase Dashboard → Storage</p>
+              <p>2. Click "Create new bucket"</p>
+              <p>3. Name: <code className="bg-muted px-1 rounded">sangat-images</code></p>
+              <p>4. Check "Public bucket"</p>
+              <p>5. Click "Save"</p>
+            </div>
+          )}
+        </div> */}
 
         {/* Camera Preview Modal */}
         {showCamera && (
@@ -476,14 +634,21 @@ export function RegistrationForm() {
           />
         </div>
 
-        {/* BP */}
+        {/* Gender */}
         <div className="space-y-2">
-          <Label htmlFor="bp">BP Reading</Label>
-          <Input
-            id="bp"
-            placeholder="e.g., 120/80"
-            {...register('bp')}
-          />
+          <Label>Gender</Label>
+          <Select
+            value={watch('gender')}
+            onValueChange={(val) => setValue('gender', val as 'Male' | 'Female')}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select gender" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="Male">Male</SelectItem>
+              <SelectItem value="Female">Female</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Hypertension */}
